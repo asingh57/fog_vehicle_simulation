@@ -11,21 +11,22 @@ from dateutil import parser
 
 ###########
 #USER DEFINED VARIABLES
-from simple_evaluator import initialiser, stream_handler, beacon_handler,handle_simulation_end
+from simple_evaluator import initialiser, stream_handler, beacon_handler,handle_simulation_end, out_of_range_handler
 #above three functions do the following respectively:
 #initialise a system (called only once) (takes a list of tuples of list of all fog positions
-#stream handler should be evaluating how much data is sent between devices (takes two tuples fog and car's coordinates)
-#beacon handler should be evaluating how a given fog is handles becons from car in range (takes two tuples fog and car's coordinates)
+#stream handler should be evaluating how much data is sent between devices (takes 2 tuples fog and car's coordinates and car_id, timestamp)
+#beacon handler should be evaluating how a given fog is handles becons from car in range (takes two tuples fog and car's coordinates and car_id, timestamp)
 #handle_simulation_end is called once simulation is ended
+#out_of_range_handler lets each fog know that a car isn't in its range
 
 
 
 seed=5 #seed for randomizer
 data_files_path="release/training_set" #which data files to use
 parsed_data_save_path="saved_data" #where to store serialised training data files
-gather_file_data=False #whether to read and parse data files or to use saved data
+gather_file_data=True #whether to read and parse data files or to use saved data
 
-stream_radius=0.5#max distance at which communication between vehicles is possible
+stream_radius=0.05#max distance at which communication between vehicles is possible
 beacon_radius=0.7#max distance at which beacons are reachable between vehicle and for
 
 #the following are to fix errors in data
@@ -64,7 +65,7 @@ def load_file_data(data_files_path=data_files_path):
                 data_dict.append([int(row[0])
                 ,int(parser.parse(row[1]).strftime("%s"))
                 ,float(row[2]),float(row[3])])
-                break
+        break
     return data_dict
 
 def parse_data(unparsed_data,save_path=parsed_data_save_path):
@@ -141,8 +142,9 @@ def euclidean_distance(a, b):
     return sqrt(dx * dx + dy * dy)
 
 
-def fast_poisson_disk_sampling(width, height, r,offset_w, offset_h, k=5, distance=euclidean_distance, random=random.random):
+def fast_poisson_disk_sampling(width, height, radius,offset_w, offset_h, k=10, distance=euclidean_distance, random=random.random):
     #generates fogs at minimum distance
+    r=radius*2
     tau = 2 * pi
     cellsize = r / sqrt(2)
 
@@ -195,27 +197,26 @@ fogs=fast_poisson_disk_sampling(max_dims[0]-min_dims[0],max_dims[1]-min_dims[1],
 
 
 
-#plt.plot(*zip(*fogs),'ro')
-#plt.show()
+plt.plot(*zip(*fogs),'ro')
+plt.show()
 
 
 
 initialiser(fogs)
 
-def send_beacon(fog,car,beacon_handler=chosen_beacon_handler):
-    return chosen_beacon_handler(fog,car)
 
-def handle_stream(fog,car,stream_handler=chosen_stream_handler):
-    return chosen_stream_handler(fog,car)
 
 for time_stamp in parsed_data:
     for car_id in parsed_data[time_stamp]:
         car=parsed_data[time_stamp][car_id]
         for fog in fogs:
+
             if euclidean_distance(fog,car)<beacon_radius:
-                send_beacon(fog,car)
+                chosen_beacon_handler(fog,car,car_id,time_stamp)
             if euclidean_distance(fog,car)<stream_radius:
-                handle_stream(fog,car)
+                chosen_stream_handler(fog,car,car_id,time_stamp)
+            else:
+                out_of_range_handler(fog,car,car_id,time_stamp)
     
 handle_simulation_end()
 
